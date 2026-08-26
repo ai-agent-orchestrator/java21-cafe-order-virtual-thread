@@ -28,6 +28,17 @@ public class CafeOrder {
     private final LocalDateTime orderedAt;
 
     public CafeOrder(int id, String customerName, List<OrderItem> items, DiscountPolicy discountPolicy) {
+        this(id, customerName, items, discountPolicy, OrderStatus.WAITING, LocalDateTime.now());
+    }
+
+    public CafeOrder(
+            int id,
+            String customerName,
+            List<OrderItem> items,
+            DiscountPolicy discountPolicy,
+            OrderStatus status,
+            LocalDateTime orderedAt
+    ) {
         this.id = id;
         this.customerName = customerName;
         /*
@@ -35,9 +46,9 @@ public class CafeOrder {
          * 외부에서 원본 List를 수정해도 주문 내부 데이터가 갑자기 바뀌지 않게 하기 위한 보호 장치입니다.
          */
         this.items = new ArrayList<>(items);
-        this.status = OrderStatus.WAITING;
+        this.status = status;
         this.discountPolicy = discountPolicy;
-        this.orderedAt = LocalDateTime.now();
+        this.orderedAt = orderedAt;
     }
 
     public int getId() {

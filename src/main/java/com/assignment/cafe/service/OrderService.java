@@ -94,6 +94,10 @@ public class OrderService {
         // 요구사항 4번: Update(주문 상태 수정)
         CafeOrder order = findById(id);
         order.changeStatus(status);
+
+        if (!orderRepository.updateStatus(id, status)) {
+            throw new OrderNotFoundException(id);
+        }
     }
 
     public void updateCustomerName(int id, String customerName) {
@@ -101,6 +105,10 @@ public class OrderService {
         validateCustomerName(customerName);
         CafeOrder order = findById(id);
         order.changeCustomerName(customerName);
+
+        if (!orderRepository.updateCustomerName(id, customerName.trim())) {
+            throw new OrderNotFoundException(id);
+        }
     }
 
     public void deleteOrder(int id) {
