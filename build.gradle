@@ -22,7 +22,4 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('run') {
     standardInput = System.in
-    jvmArgs '-Dfile.encoding=UTF-8',
-            '-Dsun.stdout.encoding=UTF-8',
-            '-Dsun.stderr.encoding=UTF-8'
 }
