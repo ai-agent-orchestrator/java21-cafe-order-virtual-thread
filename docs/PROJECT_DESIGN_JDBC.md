@@ -51,7 +51,7 @@ JDBC 프로젝트에서는 `repository`의 저장 방식을 DB 기반 DAO로 전
 OrderRepository -> List<CafeOrder>
 
 변경 방식:
-OrderDAO / OrderItemDAO / MenuDAO -> JDBC -> MySQL
+OrderRepository(DAO 역할) -> JDBC / ConnectionManager -> MySQL
 ```
 
 즉, 화면과 서비스 흐름 전체를 다시 만드는 것이 아니라 데이터 저장 계층을 MySQL 기반으로 바꾸는 것이 핵심입니다.
@@ -66,12 +66,9 @@ flowchart LR
     Controller --> Output["OutputView"]
     Controller --> Service["OrderService"]
     App --> MenuService["MenuService"]
-    Service --> OrderDAO["OrderDAO"]
-    Service --> OrderItemDAO["OrderItemDAO"]
-    MenuService --> MenuDAO["MenuDAO"]
-    OrderDAO --> JDBC["JDBC Connection"]
-    OrderItemDAO --> JDBC
-    MenuDAO --> JDBC
+    Service --> Repository["OrderRepository<br/>DAO 역할"]
+    Repository --> ConnectionManager["ConnectionManager"]
+    ConnectionManager --> JDBC["JDBC Connection"]
     JDBC --> MySQL["MySQL<br/>cafe_order_db"]
 ```
 
@@ -171,25 +168,28 @@ DTO는 DB 데이터와 Java 객체 사이에서 데이터를 운반하는 객체
 
 이 프로젝트에서는 기존 `model` 클래스가 이미 DTO와 비슷한 역할을 합니다. 따라서 초반 구현에서는 기존 모델을 재사용하고, 필요하면 DB 전용 DTO를 추가합니다.
 
-권장 DAO 구조는 다음과 같습니다.
+현재 구현 구조는 다음과 같습니다.
 
 | 클래스 | 역할 |
 | --- | --- |
-| `MenuDAO` | 메뉴 전체 조회, 메뉴 번호 조회 |
-| `OrderDAO` | 주문 등록, 조회, 수정, 삭제 |
-| `OrderItemDAO` | 주문 항목 등록, 주문별 항목 조회 |
-| `ConnectionManager` 또는 `JDBCTemplate` | DB 연결 생성과 자원 반환 |
+| `OrderRepository` | DAO 역할. 주문 등록, 조회, 수정, 삭제 SQL 실행 |
+| `ConnectionManager` | DB 연결 생성 위치 분리 |
+| `CafeOrder` | 주문 한 건을 전달하는 DTO/Model 역할 |
+| `OrderItem` | 주문 상세 데이터를 전달하는 DTO/Model 역할 |
+| `CafeMenu` | 메뉴 데이터를 전달하는 DTO/Model 역할 |
 
-패키지 구조는 다음과 같이 확장합니다.
+기존 프로젝트에서 이미 `OrderRepository`라는 이름으로 저장소 역할이 분리되어 있었기 때문에, 클래스 이름을 `OrderDAO`로 바꾸지 않고 기존 이름을 유지한다.
+
+다만 내부 구현은 `ArrayList` 저장 방식에서 JDBC/MySQL 접근 방식으로 변경했으므로 실제 역할은 DAO에 해당한다.
+
+패키지 구조는 다음과 같이 확장한다.
 
 ```text
 com.assignment.cafe
-├─ common
-│  └─ JDBCTemplate
-├─ dao
-│  ├─ MenuDAO
-│  ├─ OrderDAO
-│  └─ OrderItemDAO
+├─ db
+│  └─ ConnectionManager
+├─ repository
+│  └─ OrderRepository
 ├─ model
 ├─ service
 ├─ controller
@@ -228,22 +228,40 @@ setAutoCommit(false)
 -> 실패 시 rollback()
 ```
 
-## 9. Connection Pool 설계
+## 9. Connection 관리와 자원 반환
 
-수업 요구사항에 Connection 객체 관리와 자원 반환이 있으므로 다음 단계를 적용합니다.
+수업 요구사항에는 Connection 객체 관리와 자원 반환이 포함되어 있다.
 
-1. 초반에는 `DriverManager.getConnection()`으로 JDBC 연결 구조를 이해합니다.
-2. 이후 `HikariCP`를 적용해 Connection Pool을 사용합니다.
-3. DAO에서는 `try-with-resources` 또는 `close()` 유틸을 사용해 `Connection`, `PreparedStatement`, `ResultSet`을 반환합니다.
+이번 프로젝트에서는 Connection Pool 라이브러리를 바로 적용하기보다, JDBC의 기본 연결 흐름을 직접 이해하는 것을 우선했다.
 
-Connection Pool을 사용하는 이유는 다음과 같습니다.
+따라서 현재 구현 범위는 다음과 같다.
+
+1. `ConnectionManager`에서 `DriverManager.getConnection()`으로 JDBC 연결을 생성한다.
+2. `OrderRepository`는 `ConnectionManager.getConnection()`을 통해 DB 연결을 얻는다.
+3. `try-with-resources`를 사용해 `Connection`, `PreparedStatement`, `ResultSet`을 자동 반환한다.
+4. 주문 저장처럼 여러 SQL이 함께 성공해야 하는 작업에는 트랜잭션을 적용한다.
+
+현재 구현에서는 HikariCP 같은 Connection Pool 라이브러리를 직접 적용하지 않았다.
+
+Connection Pool은 미리 만들어 둔 DB 연결을 빌려주고 회수하는 구조이며, 실무에서는 성능과 안정성을 위해 자주 사용된다. 하지만 이번 단계에서는 `DriverManager` 방식으로 Connection 생성 위치를 분리하고, JDBC 자원 반환을 명확히 처리하는 데 집중했다.
+
+이렇게 정리한 이유는 다음과 같다.
+
+1. 현재 프로젝트는 콘솔 기반 미니 프로젝트이므로 Connection Pool 적용보다 JDBC 기본 구조 이해가 우선이다.
+2. `ConnectionManager`로 DB 연결 생성 위치를 분리해 두면 이후 HikariCP로 교체하기 쉽다.
+3. 이해하지 못한 라이브러리 설정을 억지로 넣기보다, 직접 설명 가능한 범위에서 구현하는 것이 프로젝트 원칙에 맞다.
+
+현재 구현의 핵심은 다음과 같다.
 
 ```text
-DB 연결은 생성 비용이 크다.
-요청마다 새 Connection을 만들면 비효율적이다.
-Connection Pool은 미리 만들어 둔 연결을 빌려주고 회수한다.
-AI 서비스 서버처럼 외부 요청과 DB I/O가 많은 구조에서 더 유리하다.
+ConnectionManager
+-> DriverManager.getConnection()
+-> OrderRepository에서 SQL 실행
+-> try-with-resources로 JDBC 자원 자동 반환
+-> 필요 시 commit 또는 rollback
 ```
+
+향후 Spring Boot 또는 더 큰 백엔드 프로젝트로 확장할 경우에는 `ConnectionManager` 내부 구현을 HikariCP 기반 Connection Pool로 바꿀 수 있다. 이때 서비스와 저장소의 전체 구조는 유지하고, DB 연결을 생성하는 방식만 교체하는 방향으로 확장한다.
 
 ## 10. AI 서비스 확장 관점
 
@@ -266,14 +284,14 @@ AI 서비스 서버처럼 외부 요청과 DB I/O가 많은 구조에서 더 유
 오늘 설계 커밋 이후 구현은 다음 순서로 진행합니다.
 
 1. `sql/schema.sql` 작성
-2. Gradle에 MySQL Connector와 HikariCP 의존성 추가
-3. `JDBCTemplate` 또는 `ConnectionManager` 구현
-4. `MenuDAO` 구현 후 메뉴 조회부터 DB로 전환
-5. `OrderDAO`, `OrderItemDAO` 구현
-6. 주문 등록 트랜잭션 적용
-7. 전체 조회와 단건 조회 구현
-8. 수정, 삭제 구현
-9. 검색과 필터 기능 SQL 기반으로 전환
+2. Gradle에 MySQL Connector 의존성 추가
+3. `ConnectionManager` 구현
+4. `OrderRepository`를 DAO 역할로 전환
+5. 주문 등록 트랜잭션 적용
+6. 전체 조회와 단건 조회 구현
+7. 수정, 삭제 구현
+8. JDBC CRUD 실제 실행 테스트
+9. Java 21 가상 스레드 실험 구현
 10. README, Notion, 발표 자료 정리
 
 ## 12. 발표 방어 포인트
