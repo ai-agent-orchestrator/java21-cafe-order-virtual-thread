@@ -193,6 +193,9 @@ public class CafeOrderApplication {
 
     private void updateOrder() {
         // 요구사항 4번: Update(수정) - 고객명 또는 주문 상태를 수정합니다.
+        outputView.printMessage("[현재 주문 목록]");
+        cafeOrderController.showAllOrders();
+
         outputView.printUpdateMenu();
         int updateMenu = inputView.readInt("수정 메뉴 선택: ");
         int id = inputView.readInt("수정할 주문번호: ");
@@ -224,6 +227,9 @@ public class CafeOrderApplication {
 
     private void deleteOrder() {
         // 요구사항 4번: Delete(삭제)
+        outputView.printMessage("[현재 주문 목록]");
+        cafeOrderController.showAllOrders();
+
         int id = inputView.readInt("삭제할 주문번호: ");
         boolean confirmed = inputView.readYesNo("정말 삭제하시겠습니까?");
 
